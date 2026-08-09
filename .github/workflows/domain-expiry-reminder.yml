@@ -1,0 +1,75 @@
+name: 域名到期提醒
+
+on:
+  schedule:
+    - cron: "30 8 * * *"   # 每天 08:30 UTC 检查
+  workflow_dispatch:
+    inputs:
+      test_days_until:
+        description: "测试用:手动指定距到期天数以强制触发提醒(留空则按实际日期)"
+        required: false
+        type: number
+
+permissions:
+  contents: read
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 计算距离到期天数
+        id: remind
+        run: |
+          EXPIRY="2027-11-09"
+          TODAY=$(date -u +%F)
+          DAYS=$(( ( $(date -ud "$EXPIRY" +%s) - $(date -ud "$TODAY" +%s) ) / 86400 ))
+
+          # 手动触发测试时可覆盖天数,强制走提醒流程
+          TEST=${{ github.event.inputs.test_days_until }}
+          if [ -n "$TEST" ]; then
+            DAYS=$TEST
+          fi
+
+          REMIND=no
+          # 关键提醒节点:到期前 100/60/30/14/7/3/1 天
+          for D in 100 60 30 14 7 3 1; do
+            if [ "$DAYS" -eq "$D" ]; then
+              REMIND=yes
+            fi
+          done
+          # 兜底:若进入 100 天窗口后因 Actions 漏跑错过节点,补发一次
+          if [ "$REMIND" = "no" ] && [ "$DAYS" -le 100 ] && [ "$DAYS" -ge 97 ]; then
+            REMIND=yes
+          fi
+
+          echo "days_until=$DAYS" >> "$GITHUB_OUTPUT"
+          echo "remind=$REMIND" >> "$GITHUB_OUTPUT"
+          echo "检查日期 $TODAY,距离 $EXPIRY 还有 $DAYS 天,提醒=$REMIND"
+
+      - name: 发送提醒邮件
+        if: steps.remind.outputs.remind == 'yes'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_SERVER }}
+          server_port: ${{ secrets.SMTP_PORT }}
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          secure: true
+          subject: "【域名到期提醒】coldwind8.dpdns.org / coldwind6.dpdns.org 还剩 ${{ steps.remind.outputs.days_until }} 天"
+          to: 1139795373@qq.com
+          from: ${{ secrets.SMTP_USERNAME }}
+          body: |
+            你好,
+
+            你的域名即将到期,请及时续费:
+
+            域名: coldwind8.dpdns.org
+                   coldwind6.dpdns.org
+            到期日期: 2027年11月9日
+            距到期还剩: ${{ steps.remind.outputs.days_until }} 天
+
+            续费提示: 到期前 120 天内(即 2027-07-12 起)可免费续费。
+
+            请登录 DPDNS 控制台完成续费,以免域名被回收。
+
+            此邮件由 GitHub Actions 自动发送。
