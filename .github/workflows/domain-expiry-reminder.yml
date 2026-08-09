@@ -20,9 +20,26 @@ jobs:
       - name: 计算距离到期天数
         id: remind
         run: |
-          EXPIRY="2027-11-09"
           TODAY=$(date -u +%F)
-          DAYS=$(( ( $(date -ud "$EXPIRY" +%s) - $(date -ud "$TODAY" +%s) ) / 86400 ))
+          YEAR=$(date -u +%Y)
+          MONTH_DAY="11-09"   # 每年 11 月 9 日到期
+
+          # 今年到期日
+          THIS_EXPIRY="$YEAR-$MONTH_DAY"
+          THIS_EPOCH=$(date -ud "$THIS_EXPIRY" +%s)
+          TODAY_EPOCH=$(date -ud "$TODAY" +%s)
+
+          # 若今年已过期,则取下一年的 11 月 9 日
+          if [ "$THIS_EPOCH" -le "$TODAY_EPOCH" ]; then
+            EXPIRY="$((YEAR + 1))-$MONTH_DAY"
+          else
+            EXPIRY="$THIS_EXPIRY"
+          fi
+
+          DAYS=$(( ( $(date -ud "$EXPIRY" +%s) - "$TODAY_EPOCH" ) / 86400 ))
+
+          # 免费续费窗口:到期前 120 天内
+          RENEW_START=$(date -ud "$EXPIRY - 120 days" +%F)
 
           # 手动触发测试时可覆盖天数,强制走提醒流程
           TEST=${{ github.event.inputs.test_days_until }}
@@ -44,7 +61,9 @@ jobs:
 
           echo "days_until=$DAYS" >> "$GITHUB_OUTPUT"
           echo "remind=$REMIND" >> "$GITHUB_OUTPUT"
-          echo "检查日期 $TODAY,距离 $EXPIRY 还有 $DAYS 天,提醒=$REMIND"
+          echo "renew_start=$RENEW_START" >> "$GITHUB_OUTPUT"
+          echo "expiry=$EXPIRY" >> "$GITHUB_OUTPUT"
+          echo "检查日期 $TODAY,下一次到期 $EXPIRY,还有 $DAYS 天,提醒=$REMIND"
 
       - name: 发送提醒邮件
         if: steps.remind.outputs.remind == 'yes'
@@ -65,10 +84,10 @@ jobs:
 
             域名: coldwind8.dpdns.org
                    coldwind6.dpdns.org
-            到期日期: 2027年11月9日
+            到期日期: ${{ steps.remind.outputs.expiry }} (每年 11 月 9 日到期)
             距到期还剩: ${{ steps.remind.outputs.days_until }} 天
 
-            续费提示: 到期前 120 天内(即 2027-07-12 起)可免费续费。
+            续费提示: 到期前 120 天内(即 ${{ steps.remind.outputs.renew_start }} 起)可免费续费。
 
             请登录 DPDNS 控制台完成续费,以免域名被回收。
 
