@@ -89,6 +89,8 @@ jobs:
 
             续费提示: 到期前 120 天内(即 ${{ steps.remind.outputs.renew_start }} 起)可免费续费。
 
+            续订网站: https://dashboard.digitalplat.org/
+
             请登录 DPDNS 控制台完成续费,以免域名被回收。
 
             此邮件由 GitHub Actions 自动发送。
